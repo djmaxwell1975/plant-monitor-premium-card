@@ -148,9 +148,9 @@ type: custom:plant-monitor-premium-card
 entity: plant.guelder_rose
 plant_location: outdoor
 
-rainfall_today_entity: sensor.rainfall_today
-rainfall_24h_entity: sensor.rainfall_next_24h
-rainfall_48h_entity: sensor.rainfall_next_48h
+rainfall_today_entity: sensor.plant_rain_today
+rainfall_24h_entity: sensor.plant_rain_next_24h
+rainfall_48h_entity: sensor.plant_rain_next_48h
 ```
 
 ---
