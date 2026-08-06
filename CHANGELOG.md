@@ -19,6 +19,15 @@
 
 - Fix configuration errors for dashboards still loading the legacy root resource path
 
+## v1.0.4
+
+- Correct the compatibility entry point location at the repository root
+
+## v1.0.5
+
+- Ship the complete card build at the HACS-configured root filename
+- Align `hacs.json` with the existing Home Assistant resource URL
+
 ## v1.0.2
 
 - Fix false `0% Critical` health summaries when sensor entities are discovered
