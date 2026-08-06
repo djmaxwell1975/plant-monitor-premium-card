@@ -313,13 +313,46 @@ You can optionally provide:
 ```yaml
 sensor_prefix:
 device_prefix:
+moisture_entity:
+min_moisture_entity:
+max_moisture_entity:
+dli_entity:
+min_dli_entity:
+max_dli_entity:
 air_temperature_entity:
+min_temperature_entity:
+max_temperature_entity:
+humidity_entity:
+min_humidity_entity:
+max_humidity_entity:
+soil_temperature_entity:
+vpd_entity:
+battery_entity:
+lqi_entity:
 rainfall_today_entity:
 rainfall_24h_entity:
 rainfall_48h_entity:
 ```
 
 Missing optional sensors should not prevent the card from loading.
+
+All override keys are top-level card options. They must not be nested under a
+`variables:` block.
+
+### DLI Override Notes
+
+`dli_entity` must point to a Daily Light Integral sensor, normally reported in
+`mol/m²/day`. A lux or illuminance sensor cannot be used as a DLI sensor because
+the card does not have enough information to convert momentary lux readings into
+a daily light integral.
+
+If a DLI override is set to a lux sensor, the card will display the reading but
+will flag it as invalid rather than treating lux as DLI. Configure the
+illuminance source through Plant Monitor or use a real DLI entity.
+
+Minimum and maximum threshold entities are optional for displaying a current
+reading. Without both thresholds, the card shows the value but cannot assign a
+Low, Good, High or Collecting status.
 
 ---
 
@@ -385,8 +418,9 @@ The v1.0.0 rendering engine reduces unnecessary frontend re-renders and includes
 - Not designed for the stock Home Assistant Plant integration
 - OpenPlantBook data quality depends on available species records
 - Rainfall forecasts are estimates
-- Battery and LQI are shown only when matching sensors exist
+- Battery and LQI chips are shown only when matching sensors exist
 - Outdoor CO2 is not required and is generally not recommended
+- Raw lux readings are not converted into DLI
 
 ---
 

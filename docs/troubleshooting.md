@@ -202,21 +202,53 @@ Verify:
 
 ---
 
+## Manual Sensor Override Displays —
+
+### Symptoms
+
+- A manually selected sensor is valid in Home Assistant but the card shows no value
+- The card continues to use the automatically discovered sensor
+
+### Checks
+
+Use the override as a top-level card option:
+
+```yaml
+type: custom:plant-monitor-premium-card
+entity: plant.monstera
+plant_location: indoor
+moisture_entity: sensor.monstera_soil_moisture
+air_temperature_entity: sensor.living_room_temperature
+```
+
+Do not place the override under `variables:` and do not use `moisture_sensor`;
+the supported key is `moisture_entity`.
+
+For DLI, use an entity whose unit is normally `mol/m²/day`. A sensor reporting
+lux or `lx` is an illuminance sensor, not a DLI sensor, and cannot be used as a
+direct DLI replacement.
+
+The current value is displayed even when min/max threshold entities are not
+available. Status colouring requires both the minimum and maximum threshold
+entities.
+
+After changing an override, perform a full browser refresh or restart the Home
+Assistant mobile app so the updated card configuration is loaded.
+
+---
+
 ## Battery Or LQI Missing
 
 ### Symptoms
 
-Battery or LQI values display:
-
-```text
-—
-```
+The Battery or LQI chip is not shown.
 
 ### Explanation
 
 Battery and Link Quality are optional.
 
-The card continues to function without them.
+The card removes the chip when the corresponding sensor does not exist and
+continues to function without it.
 
 ---
 

@@ -356,6 +356,10 @@ class PlantMonitorPremiumCard extends HTMLElement {
       humidity_entity: this.config?.humidity_entity || "",
       min_humidity_entity: this.config?.min_humidity_entity || "",
       max_humidity_entity: this.config?.max_humidity_entity || "",
+      min_temperature_entity: this.config?.min_temperature_entity || "",
+      max_temperature_entity: this.config?.max_temperature_entity || "",
+      soil_temperature_entity: this.config?.soil_temperature_entity || "",
+      vpd_entity: this.config?.vpd_entity || "",
       battery_entity: this.config?.battery_entity || "",
       lqi_entity: this.config?.lqi_entity || "",
       rainfall_today_entity: this.config?.rainfall_today_entity || "",
@@ -481,42 +485,106 @@ class PlantMonitorPremiumCard extends HTMLElement {
     return isNaN(value) ? NaN : value;
   }
 
+  getUnit(entityId) {
+    return String(this.getState(entityId)?.attributes?.unit_of_measurement || "");
+  }
+
+  isIlluminanceSensor(entityId) {
+    const stateObj = this.getState(entityId);
+    const unit = this.getUnit(entityId).toLowerCase();
+    const deviceClass = String(stateObj?.attributes?.device_class || "").toLowerCase();
+
+    return unit === "lx" || unit.includes("lux") || deviceClass === "illuminance";
+  }
+
+  hasExplicitOverride(...keys) {
+    return keys.some((key) => {
+      const value = this.config?.[key];
+      return typeof value === "string" && value.trim() !== "";
+    });
+  }
+
+  getOverrideStatus(currentEntity, minEntity, maxEntity, mode = "normal") {
+    const current = this.getNumber(currentEntity);
+    const min = this.getNumber(minEntity);
+    const max = this.getNumber(maxEntity);
+
+    if (mode === "dli" && this.isIlluminanceSensor(currentEntity)) return "invalid";
+    if ([current, min, max].some((value) => isNaN(value))) return "unknown";
+
+    if (mode === "dli" && new Date().getHours() < 12 && current < min) {
+      return "collecting";
+    }
+
+    if (current < min) return "low";
+    if (current > max) return "high";
+    return "ok";
+  }
+
+  getStatusSnapshot(entity, resolved = this.resolved()) {
+    const attrs = entity?.attributes || {};
+    const statuses = {
+      moisture_status: attrs.moisture_status,
+      temperature_status: attrs.temperature_status,
+      illuminance_status: attrs.illuminance_status,
+      humidity_status: attrs.humidity_status,
+      co2_status: attrs.co2_status,
+      soil_temperature_status: attrs.soil_temperature_status,
+      dli_status: attrs.dli_status,
+      vpd_status: attrs.vpd_status
+    };
+
+    const overrides = [
+      ["moisture_status", ["moisture_entity", "min_moisture_entity", "max_moisture_entity"], "moisture", "minMoisture", "maxMoisture"],
+      ["temperature_status", ["air_temperature_entity", "min_temperature_entity", "max_temperature_entity"], "temperature", "minTemperature", "maxTemperature"],
+      ["humidity_status", ["humidity_entity", "min_humidity_entity", "max_humidity_entity"], "humidity", "minHumidity", "maxHumidity"],
+      ["dli_status", ["dli_entity", "min_dli_entity", "max_dli_entity"], "dli", "minDli", "maxDli", "dli"]
+    ];
+
+    overrides.forEach(([statusKey, configKeys, currentKey, minKey, maxKey, mode]) => {
+      if (!this.hasExplicitOverride(...configKeys)) return;
+
+      statuses[statusKey] = this.getOverrideStatus(
+        resolved[currentKey],
+        resolved[minKey],
+        resolved[maxKey],
+        mode || "normal"
+      );
+    });
+
+    if (this.config?.plant_location === "outdoor") {
+      delete statuses.co2_status;
+    }
+
+    return statuses;
+  }
+
   getDisplay(entityId, suffix = "") {
     const stateObj = this.getState(entityId);
     if (!stateObj || stateObj.state === "unknown" || stateObj.state === "unavailable") return "—";
     return `${stateObj.state}${suffix}`;
   }
 
-  getHealth(entity) {
-    const attrs = entity?.attributes || {};
-
-    const checks = [
-      attrs.moisture_status,
-      attrs.temperature_status,
-      attrs.illuminance_status,
-      attrs.humidity_status,
-      attrs.co2_status,
-      attrs.soil_temperature_status,
-      attrs.dli_status,
-      attrs.vpd_status
-    ].filter((v) => v && v !== "null");
+  getHealth(entity, resolved = this.resolved()) {
+    const statuses = this.getStatusSnapshot(entity, resolved);
+    const checks = Object.values(statuses).filter((value) =>
+      ["ok", "collecting", "low", "high", "invalid"].includes(value)
+    );
 
     const total = checks.length;
-    const good = checks.filter((v) => v === "ok").length;
-    const score = total ? Math.round((good / total) * 100) : 0;
+    const good = checks.filter((value) => value === "ok" || value === "collecting").length;
+    const plantStateOk = String(entity?.state || "").toLowerCase() === "ok";
+    const score = !plantStateOk ? 0 : total ? Math.round((good / total) * 100) : 0;
 
     let colour = "#6ee16e";
     let stateLabel = "Excellent";
 
-    if (score < 70) {
+    if (!plantStateOk || score < 70) {
       colour = "#ff6b6b";
       stateLabel = "Critical";
-    } else if (score < 80) {
-      colour = "#f1c40f";
-      stateLabel = "Attention";
     } else if (score < 90) {
       colour = "#f1c40f";
-      stateLabel = "Good";
+      stateLabel = "Attention";
     } else if (score < 100) {
       colour = "#6ee16e";
       stateLabel = "Healthy";
@@ -690,7 +758,7 @@ class PlantMonitorPremiumCard extends HTMLElement {
     const name = attrs.friendly_name || "Plant";
     const species = attrs.species || "Plant";
     const image = attrs.entity_picture || "";
-    const health = this.getHealth(entity);
+    const health = this.getHealth(entity, r);
 
     cardEl.style.background = this.getBackground(entity, health.score);
 
@@ -732,7 +800,7 @@ class PlantMonitorPremiumCard extends HTMLElement {
       ${this.renderBar("Humidity", "mdi:water-percent", r.humidity, r.minHumidity, r.maxHumidity, "%")}
     `;
 
-    attentionEl.innerHTML = this.renderAttention(entity);
+    attentionEl.innerHTML = this.renderAttention(entity, r);
     wateringEl.innerHTML = this.renderWatering(entity, r);
     chipsEl.innerHTML = this.renderChips(r);
 
@@ -743,6 +811,8 @@ class PlantMonitorPremiumCard extends HTMLElement {
     const current = this.getNumber(sensorEntity);
     const min = this.getNumber(minEntity);
     const max = this.getNumber(maxEntity);
+    const invalidDli = mode === "dli" && this.isIlluminanceSensor(sensorEntity);
+    const displayUnit = unit || this.getUnit(sensorEntity);
 
     let text = "Unknown";
     let colour = "#777";
@@ -750,22 +820,34 @@ class PlantMonitorPremiumCard extends HTMLElement {
     let display = "—";
     let glow = "none";
 
-    if (!isNaN(current) && !isNaN(min) && !isNaN(max)) {
-      display = `${current.toFixed(current % 1 ? 1 : 0)}${unit}`;
-      pct = Math.max(0, Math.min(100, (current / max) * 100));
+    if (!isNaN(current)) {
+      display = `${current.toFixed(current % 1 ? 1 : 0)}${displayUnit}`;
 
-      if (mode === "dli" && new Date().getHours() < 12 && current < min) {
-        text = "Collecting";
+      if (invalidDli) {
+        text = "Use DLI sensor";
         colour = "#f1c40f";
-      } else if (current < min) {
-        text = "Low";
-        colour = "#f1c40f";
-      } else if (current > max) {
-        text = "High";
-        colour = "#3498db";
+      } else if (!isNaN(min) && !isNaN(max)) {
+        const range = max - min;
+        pct = range > 0
+          ? Math.max(0, Math.min(100, ((current - min) / range) * 100))
+          : 0;
+
+        if (mode === "dli" && new Date().getHours() < 12 && current < min) {
+          text = "Collecting";
+          colour = "#f1c40f";
+        } else if (current < min) {
+          text = "Low";
+          colour = "#f1c40f";
+        } else if (current > max) {
+          text = "High";
+          colour = "#3498db";
+        } else {
+          text = "Good";
+          colour = "#2ecc71";
+        }
       } else {
-        text = "Good";
-        colour = "#2ecc71";
+        text = "Value";
+        colour = "#8ab4f8";
       }
 
       if (mode === "dli") glow = `0 0 14px ${colour}`;
@@ -784,15 +866,15 @@ class PlantMonitorPremiumCard extends HTMLElement {
           <div style="height:100%;width:${pct}%;background:${colour};border-radius:999px;box-shadow:${glow};transition:width .45s ease;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;opacity:.55;margin-top:3px;">
-          <span>Min ${isNaN(min) ? "—" : min}${unit}</span>
-          <span>Max ${isNaN(max) ? "—" : max}${unit}</span>
+          <span>Min ${invalidDli || isNaN(min) ? "—" : min}${invalidDli ? "" : displayUnit}</span>
+          <span>Max ${invalidDli || isNaN(max) ? "—" : max}${invalidDli ? "" : displayUnit}</span>
         </div>
       </div>
     `;
   }
 
-  renderAttention(entity) {
-    const attrs = entity.attributes || {};
+  renderAttention(entity, r = this.resolved()) {
+    const statuses = this.getStatusSnapshot(entity, r);
     const items = [];
     const labels = {
       moisture_status: "Soil moisture",
@@ -806,10 +888,19 @@ class PlantMonitorPremiumCard extends HTMLElement {
     };
 
     for (const [key, label] of Object.entries(labels)) {
-      const value = attrs[key];
-      if (value && value !== "ok" && value !== "null") {
-        items.push(`${label} ${String(value).toLowerCase()}`);
+      const value = statuses[key];
+      if (value && !["ok", "collecting", "null"].includes(value)) {
+        const detail = value === "unknown"
+          ? "not available"
+          : value === "invalid"
+            ? "uses the wrong sensor type"
+            : String(value).toLowerCase();
+        items.push(`${label} ${detail}`);
       }
+    }
+
+    if (String(entity?.state || "").toLowerCase() !== "ok") {
+      items.unshift("Plant status is not ok");
     }
 
     if (!items.length) {
@@ -832,7 +923,9 @@ class PlantMonitorPremiumCard extends HTMLElement {
 
   renderWatering(entity, r) {
     const isOutdoor = this.config.plant_location === "outdoor";
-    const moistureStatus = String(entity.attributes?.moisture_status || "").toLowerCase();
+    const moistureStatus = String(
+      this.getStatusSnapshot(entity, r).moisture_status || ""
+    ).toLowerCase();
 
     const rainToday = isOutdoor ? this.getNumber(r.rainToday) || 0 : 0;
     const rain24h = isOutdoor ? this.getNumber(r.rain24h) || 0 : 0;
@@ -843,7 +936,12 @@ class PlantMonitorPremiumCard extends HTMLElement {
     let title = "No action required";
     let detail = "Soil moisture is within range.";
 
-    if (moistureStatus === "low") {
+    if (moistureStatus === "unknown") {
+      icon = "mdi:help-circle-outline";
+      colour = "#f1c40f";
+      title = "Check moisture sensor";
+      detail = "A moisture override is configured but its value or thresholds are unavailable.";
+    } else if (moistureStatus === "low") {
       if (isOutdoor && rain24h >= 4) {
         icon = "mdi:weather-pouring";
         colour = "#3498db";
@@ -907,17 +1005,29 @@ class PlantMonitorPremiumCard extends HTMLElement {
   }
 
   renderChips(r) {
-    const soil = this.getDisplay(r.soilTemperature, "°C");
-    const vpd = this.getDisplay(r.vpd);
-    const battery = this.getDisplay(r.battery, "%");
-    const lqi = this.getDisplay(r.lqi);
+    const chips = [];
+
+    if (this.getState(r.soilTemperature)) {
+      chips.push(this.renderChip("mdi:thermometer-lines", this.getDisplay(r.soilTemperature, "°C"), "Soil"));
+    }
+
+    if (this.getState(r.vpd)) {
+      chips.push(this.renderChip("mdi:weather-windy", this.getDisplay(r.vpd), "VPD"));
+    }
+
+    if (this.getState(r.battery)) {
+      chips.push(this.renderChip("mdi:battery", this.getDisplay(r.battery, "%"), "Battery"));
+    }
+
+    if (this.getState(r.lqi)) {
+      chips.push(this.renderChip("mdi:signal", this.getDisplay(r.lqi), "LQI"));
+    }
+
+    if (!chips.length) return "";
 
     return `
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;">
-        ${this.renderChip("mdi:thermometer-lines", soil, "Soil")}
-        ${this.renderChip("mdi:weather-windy", vpd, "VPD")}
-        ${this.renderChip("mdi:battery", battery, "Battery")}
-        ${this.renderChip("mdi:signal", lqi, "LQI")}
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(chips.length, 4)},1fr);gap:8px;text-align:center;">
+        ${chips.join("")}
       </div>
     `;
   }
@@ -949,7 +1059,25 @@ class PlantMonitorPremiumCard extends HTMLElement {
         { name: "entity", label: "Plant entity", selector: { entity: { domain: "plant" } } },
         { name: "sensor_prefix", label: "Plant Monitor sensor prefix", selector: { text: {} } },
         { name: "device_prefix", label: "Device battery/LQI prefix", selector: { text: {} } },
+        { name: "moisture_entity", label: "Soil moisture override", selector: { entity: { domain: "sensor" } } },
+        { name: "min_moisture_entity", label: "Minimum soil moisture", selector: { entity: { domain: "number" } } },
+        { name: "max_moisture_entity", label: "Maximum soil moisture", selector: { entity: { domain: "number" } } },
+        { name: "dli_entity", label: "DLI override", selector: { entity: { domain: "sensor" } } },
+        { name: "min_dli_entity", label: "Minimum DLI", selector: { entity: { domain: "number" } } },
+        { name: "max_dli_entity", label: "Maximum DLI", selector: { entity: { domain: "number" } } },
         { name: "air_temperature_entity", label: "Air temperature override", selector: { entity: {} } },
+        { name: "min_temperature_entity", label: "Minimum air temperature", selector: { entity: { domain: "number" } } },
+        { name: "max_temperature_entity", label: "Maximum air temperature", selector: { entity: { domain: "number" } } },
+        { name: "humidity_entity", label: "Humidity override", selector: { entity: { domain: "sensor" } } },
+        { name: "min_humidity_entity", label: "Minimum humidity", selector: { entity: { domain: "number" } } },
+        { name: "max_humidity_entity", label: "Maximum humidity", selector: { entity: { domain: "number" } } },
+        { name: "soil_temperature_entity", label: "Soil temperature override", selector: { entity: { domain: "sensor" } } },
+        { name: "vpd_entity", label: "VPD override", selector: { entity: { domain: "sensor" } } },
+        { name: "battery_entity", label: "Battery override", selector: { entity: { domain: "sensor" } } },
+        { name: "lqi_entity", label: "LQI override", selector: { entity: { domain: "sensor" } } },
+        { name: "rainfall_today_entity", label: "Rainfall today", selector: { entity: { domain: "sensor" } } },
+        { name: "rainfall_24h_entity", label: "Rainfall next 24 hours", selector: { entity: { domain: "sensor" } } },
+        { name: "rainfall_48h_entity", label: "Rainfall next 48 hours", selector: { entity: { domain: "sensor" } } },
         {
           name: "plant_location",
           label: "Plant location",

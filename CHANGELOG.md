@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Fix manual soil moisture, DLI, temperature and humidity override handling
+- Continue displaying valid sensor values when threshold entities are unavailable
+- Reject lux/illuminance entities when configured as DLI overrides
+- Align health, attention and watering logic with configured overrides
+- Omit optional soil, VPD, battery and LQI chips when their sensors are unavailable
+- Ignore CO₂ status for outdoor plants and mark non-`ok` plant entities critical
+- Document all supported entity overrides and their top-level YAML placement
+
 ## v1.0.0
 
 Initial public release.
