@@ -13,6 +13,11 @@
 - Omit optional soil, VPD, battery and LQI chips when their sensors are unavailable
 - Ignore CO₂ status for outdoor plants and mark non-`ok` plant entities critical
 - Document all supported entity overrides and their top-level YAML placement
+- Add a root compatibility entry point for existing Home Assistant resource paths
+
+## v1.0.3
+
+- Fix configuration errors for dashboards still loading the legacy root resource path
 
 ## v1.0.2
 
