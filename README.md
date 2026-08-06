@@ -2,7 +2,7 @@
 
 ![HACS](https://img.shields.io/badge/HACS-Custom-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1%2B-green)
-![Version](https://img.shields.io/badge/version-1.0.2-success)
+![Version](https://img.shields.io/badge/version-1.0.3-success)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 
 A premium Home Assistant card for Plant Monitor featuring OpenPlantBook integration, DLI-based light monitoring, rainfall-aware watering advice, mobile responsive layouts and a visual configuration editor.
@@ -263,6 +263,9 @@ type: module
 ```
 
 Then refresh the Home Assistant frontend.
+
+Existing dashboards using `/hacsfiles/plant-monitor-premium-card/plant-monitor-premium-card.js`
+are also supported through a compatibility entry point.
 
 ---
 
