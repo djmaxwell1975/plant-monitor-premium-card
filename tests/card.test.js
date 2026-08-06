@@ -151,6 +151,67 @@ function sensor(state, unit_of_measurement) {
 }
 
 {
+  const card = makeCard(
+    {
+      entity: "plant.monstera",
+      sensor_prefix: "monstera"
+    },
+    {
+      "plant.monstera": { state: "ok", attributes: {} },
+      "sensor.monstera_soil_moisture": sensor(62, "%"),
+      "number.monstera_min_soil_moisture": sensor(30, "%"),
+      "number.monstera_max_soil_moisture": sensor(80, "%"),
+      "sensor.monstera_dli_24h": sensor(12.4, "mol/m²/day"),
+      "number.monstera_min_dli": sensor(8, "mol/m²/day"),
+      "number.monstera_max_dli": sensor(35, "mol/m²/day"),
+      "sensor.monstera_temperature": sensor(21, "°C"),
+      "number.monstera_min_temperature": sensor(15, "°C"),
+      "number.monstera_max_temperature": sensor(30, "°C"),
+      "sensor.monstera_air_humidity": sensor(55, "%"),
+      "number.monstera_min_air_humidity": sensor(40, "%"),
+      "number.monstera_max_air_humidity": sensor(70, "%")
+    }
+  );
+
+  const entity = card.getState("plant.monstera");
+  const health = card.getHealth(entity, card.resolved());
+  const attention = card.renderAttention(entity, card.resolved());
+
+  assert.equal(health.score, 100);
+  assert.equal(health.total, 4);
+  assert.equal(health.good, 4);
+  assert.match(attention, /All monitored values are within target range/);
+}
+
+{
+  const card = makeCard({ entity: "plant.monstera" }, {});
+  const health = card.getHealth({ state: "ok", attributes: {} }, card.resolved());
+
+  assert.equal(health.score, null);
+  assert.equal(health.stateLabel, "Awaiting data");
+  assert.equal(health.total, 0);
+}
+
+{
+  const card = makeCard(
+    {
+      entity: "plant.monstera",
+      sensor_prefix: "monstera"
+    },
+    {
+      "sensor.monstera_soil_moisture": sensor(62, "%"),
+      "number.monstera_min_soil_moisture": sensor(30, "%"),
+      "number.monstera_max_soil_moisture": sensor(80, "%")
+    }
+  );
+
+  const health = card.getHealth({ state: "problem", attributes: {} }, card.resolved());
+
+  assert.equal(health.score, 0);
+  assert.equal(health.stateLabel, "Critical");
+}
+
+{
   const card = makeCard({ entity: "plant.monstera" }, {});
   const health = card.getHealth({ state: "unavailable", attributes: {} }, card.resolved());
   assert.equal(health.score, 0);

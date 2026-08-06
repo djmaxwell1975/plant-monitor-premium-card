@@ -521,17 +521,45 @@ class PlantMonitorPremiumCard extends HTMLElement {
     return "ok";
   }
 
+  isScorableStatus(value) {
+    return ["ok", "collecting", "low", "high", "invalid"].includes(
+      String(value || "").toLowerCase()
+    );
+  }
+
+  getResolvedStatus(currentEntity, minEntity, maxEntity, mode = "normal") {
+    if (!this.exists(currentEntity)) return null;
+
+    const current = this.getNumber(currentEntity);
+    const min = this.getNumber(minEntity);
+    const max = this.getNumber(maxEntity);
+
+    if (mode === "dli" && this.isIlluminanceSensor(currentEntity)) {
+      return "invalid";
+    }
+
+    if ([current, min, max].some((value) => isNaN(value))) return null;
+
+    if (mode === "dli" && new Date().getHours() < 12 && current < min) {
+      return "collecting";
+    }
+
+    if (current < min) return "low";
+    if (current > max) return "high";
+    return "ok";
+  }
+
   getStatusSnapshot(entity, resolved = this.resolved()) {
     const attrs = entity?.attributes || {};
     const statuses = {
-      moisture_status: attrs.moisture_status,
-      temperature_status: attrs.temperature_status,
-      illuminance_status: attrs.illuminance_status,
-      humidity_status: attrs.humidity_status,
-      co2_status: attrs.co2_status,
-      soil_temperature_status: attrs.soil_temperature_status,
-      dli_status: attrs.dli_status,
-      vpd_status: attrs.vpd_status
+      moisture_status: String(attrs.moisture_status || "").toLowerCase() || null,
+      temperature_status: String(attrs.temperature_status || "").toLowerCase() || null,
+      illuminance_status: String(attrs.illuminance_status || "").toLowerCase() || null,
+      humidity_status: String(attrs.humidity_status || "").toLowerCase() || null,
+      co2_status: String(attrs.co2_status || "").toLowerCase() || null,
+      soil_temperature_status: String(attrs.soil_temperature_status || "").toLowerCase() || null,
+      dli_status: String(attrs.dli_status || "").toLowerCase() || null,
+      vpd_status: String(attrs.vpd_status || "").toLowerCase() || null
     };
 
     const overrides = [
@@ -542,14 +570,28 @@ class PlantMonitorPremiumCard extends HTMLElement {
     ];
 
     overrides.forEach(([statusKey, configKeys, currentKey, minKey, maxKey, mode]) => {
-      if (!this.hasExplicitOverride(...configKeys)) return;
+      const explicit = this.hasExplicitOverride(...configKeys);
+      const derived = explicit
+        ? this.getOverrideStatus(
+            resolved[currentKey],
+            resolved[minKey],
+            resolved[maxKey],
+            mode || "normal"
+          )
+        : this.getResolvedStatus(
+            resolved[currentKey],
+            resolved[minKey],
+            resolved[maxKey],
+            mode || "normal"
+          );
 
-      statuses[statusKey] = this.getOverrideStatus(
-        resolved[currentKey],
-        resolved[minKey],
-        resolved[maxKey],
-        mode || "normal"
-      );
+      // Explicit card configuration always wins. Otherwise, fill in the
+      // Plant Monitor attributes when the integration does not expose a
+      // per-metric status, which is the normal case for auto-discovered
+      // sensors.
+      if (explicit || !this.isScorableStatus(statuses[statusKey])) {
+        if (derived) statuses[statusKey] = derived;
+      }
     });
 
     if (this.config?.plant_location === "outdoor") {
@@ -567,33 +609,41 @@ class PlantMonitorPremiumCard extends HTMLElement {
 
   getHealth(entity, resolved = this.resolved()) {
     const statuses = this.getStatusSnapshot(entity, resolved);
-    const checks = Object.values(statuses).filter((value) =>
-      ["ok", "collecting", "low", "high", "invalid"].includes(value)
-    );
+    const checks = Object.values(statuses).filter((value) => this.isScorableStatus(value));
 
     const total = checks.length;
     const good = checks.filter((value) => value === "ok" || value === "collecting").length;
     const plantStateOk = String(entity?.state || "").toLowerCase() === "ok";
-    const score = !plantStateOk ? 0 : total ? Math.round((good / total) * 100) : 0;
+    const score = !plantStateOk ? 0 : total ? Math.round((good / total) * 100) : null;
 
-    let colour = "#6ee16e";
-    let stateLabel = "Excellent";
+    let colour = "#8ab4f8";
+    let stateLabel = "Awaiting data";
 
-    if (!plantStateOk || score < 70) {
+    if (!plantStateOk) {
       colour = "#ff6b6b";
       stateLabel = "Critical";
-    } else if (score < 90) {
+    } else if (score !== null && score < 70) {
+      colour = "#ff6b6b";
+      stateLabel = "Critical";
+    } else if (score !== null && score < 90) {
       colour = "#f1c40f";
       stateLabel = "Attention";
-    } else if (score < 100) {
+    } else if (score !== null && score < 100) {
       colour = "#6ee16e";
       stateLabel = "Healthy";
+    } else if (score === 100) {
+      colour = "#6ee16e";
+      stateLabel = "Excellent";
     }
 
     return { score, total, good, colour, stateLabel };
   }
 
   getBackground(entity, score) {
+    if (score === null) {
+      return "linear-gradient(135deg, rgba(25,48,74,.96), rgba(16,20,24,.98))";
+    }
+
     if (score < 70) {
       return "linear-gradient(135deg, rgba(74,37,24,.96), rgba(16,20,24,.98))";
     }
@@ -759,6 +809,11 @@ class PlantMonitorPremiumCard extends HTMLElement {
     const species = attrs.species || "Plant";
     const image = attrs.entity_picture || "";
     const health = this.getHealth(entity, r);
+    const scoreDisplay = health.score === null ? "—" : `${health.score}%`;
+    const scoreDegrees = health.score === null ? 0 : health.score * 3.6;
+    const healthSummary = health.total
+      ? `${health.good}/${health.total} healthy`
+      : "Awaiting data";
 
     cardEl.style.background = this.getBackground(entity, health.score);
 
@@ -774,11 +829,11 @@ class PlantMonitorPremiumCard extends HTMLElement {
         </div>
 
         <div style="min-width:74px;text-align:center;">
-          <div style="position:relative;width:46px;height:46px;margin-left:auto;margin-right:auto;border-radius:50%;background:conic-gradient(${health.colour} ${health.score * 3.6}deg, rgba(255,255,255,.16) 0deg);box-shadow:0 0 14px rgba(0,0,0,.38);">
-            <div style="position:absolute;inset:5px;border-radius:50%;background:rgba(16,20,24,.94);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:${health.colour};">${health.score}%</div>
+          <div style="position:relative;width:46px;height:46px;margin-left:auto;margin-right:auto;border-radius:50%;background:conic-gradient(${health.colour} ${scoreDegrees}deg, rgba(255,255,255,.16) 0deg);box-shadow:0 0 14px rgba(0,0,0,.38);">
+            <div style="position:absolute;inset:5px;border-radius:50%;background:rgba(16,20,24,.94);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:${health.colour};">${scoreDisplay}</div>
           </div>
           <div style="font-size:10px;opacity:.82;margin-top:4px;font-weight:800;color:${health.colour};">${health.stateLabel}</div>
-          <div style="font-size:10px;opacity:.56;margin-top:1px;">${health.good}/${health.total} healthy</div>
+          <div style="font-size:10px;opacity:.56;margin-top:1px;">${healthSummary}</div>
         </div>
       </div>
     `;
